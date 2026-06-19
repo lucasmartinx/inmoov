@@ -1,8 +1,9 @@
-version: '2.1'
-
+version: '2'
 services:
   main:
     build: .
-    privileged: true # NECESSÁRIO para acessar o hardware da câmera
+    privileged: true
+    ports:
+      - "80:80"
     devices:
-      - "/dev/video0:/dev/video0" # Mapeia a câmera para dentro do contêiner
+      - "/dev/video0:/dev/video0"

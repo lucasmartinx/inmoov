@@ -1,45 +1,69 @@
+from flask import Flask, Response
 import cv2
-import socket
-import struct
 import time
 
-IP_DO_WEMOS = "192.168.0.41"
-PORTA_UDP = 5555
+app = Flask(__name__)
 
-# Abre a câmera diretamente no nó do Linux
-print("Iniciando captura do /dev/video0...")
-cap = cv2.VideoCapture(0)
+print("Iniciando servidor Biocam...", flush=True)
 
-# Força a resolução baixa para a Biocam não afogar o Wemos
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, 480)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 320)
+# Sistema de varredura: testa os índices onde o Pi 4 costuma esconder a câmera real
+cap = None
+indices_para_testar = [0, 2, -1, 1, 10] 
 
-sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+for index in indices_para_testar:
+    print(f"Testando câmera no índice {index}...", flush=True)
+    temp_cap = cv2.VideoCapture(index, cv2.CAP_V4L2)
+    
+    if temp_cap.isOpened():
+        # Tenta ler alguns frames para dar tempo do sensor acordar e checar se não é tela preta
+        sucesso = False
+        frame_valido = None
+        for _ in range(5):
+            sucesso, frame_teste = temp_cap.read()
+            # frame.max() > 0 verifica se a imagem não é 100% composta de pixels pretos (valor 0)
+            if sucesso and frame_teste is not None and frame_teste.max() > 0:
+                frame_valido = True
+                break
+            time.sleep(0.2)
+            
+        if frame_valido:
+            print(f"SUCESSO! Câmera com imagem real encontrada no índice {index}!", flush=True)
+            cap = temp_cap
+            break
+        else:
+            print(f"Índice {index} conectou, mas só enviou tela preta. Descartando...", flush=True)
+            temp_cap.release()
 
-try:
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            print("Erro ao ler frame. Tentando reconectar...")
+if cap is None:
+    print("ERRO CRÍTICO: Nenhuma câmera com imagem real encontrada. O cabo flat pode estar invertido ou as variáveis do Balena ausentes.", flush=True)
+
+def gen_frames():
+    if cap is None:
+        # Se não achou câmera, mantém o gerador vivo mas sem enviar imagem para não travar o Flask
+        while True:
             time.sleep(1)
+            
+    while True:
+        success, frame = cap.read()
+        if not success:
+            time.sleep(0.1)
             continue
         
-        # Converte a imagem para RGB565 (formato de telas de microcontrolador)
-        frame_rgb565 = cv2.cvtColor(frame, cv2.COLOR_BGR2BGR565)
-        frame_bytes = frame_rgb565.tobytes()
+        # Converte o frame do OpenCV para JPEG
+        ret, buffer = cv2.imencode('.jpg', frame)
+        frame_bytes = buffer.tobytes()
+        
+        # Formata como stream para o navegador
+        yield (b'--frame\r\n'
+               b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
 
-        # Envia linha por linha (320 linhas)
-        for linha in range(320):
-            inicio = linha * 960 # 480 pixels * 2 bytes
-            fim = inicio + 960
-            pacote = struct.pack('>H', linha) + frame_bytes[inicio:fim]
-            sock.sendto(pacote, (IP_DO_WEMOS, PORTA_UDP))
-            
-        # Pequeno respiro para a rede
-        time.sleep(0.01)
+@app.route('/video_feed')
+def video_feed():
+    return Response(gen_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
-except KeyboardInterrupt:
-    print("Encerrando...")
-finally:
-    cap.release()
-    sock.close()
+@app.route('/')
+def index():
+    return "Servidor Biocam online! Acesse a rota /video_feed para visualizar a câmera."
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=80, threaded=True)

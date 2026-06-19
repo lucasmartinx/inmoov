@@ -8,12 +8,12 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 # --- AQUI ESTÁ A MÁGICA: AS INSTRUÇÕES DE CÓPIA ---
-COPY escuta_som.py ./
-COPY teste_camera.py ./
-COPY receber_audio.py ./
+# O comando abaixo copia TODOS os seus arquivos .py para o contêiner,
+# garantindo que o stream_camera.py e seus scripts de áudio vão junto!
+COPY *.py ./
 
 ENV PYTHONUNBUFFERED=1
 
 # Por agora, vamos testar a visão. Depois unimos com a voz!
 # O erro foi corrigido, a câmera já pode ligar sozinha!
-CMD ["python3", "teste_camera.py"]
+CMD ["python", "stream_camera.py"]

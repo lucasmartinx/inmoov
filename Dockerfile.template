@@ -1,0 +1,19 @@
+FROM balenalib/%%BALENA_MACHINE_NAME%%-python:3.9-run
+
+RUN install_packages alsa-utils libportaudio2 portaudio19-dev build-essential libgl1 libglib2.0-0
+
+WORKDIR /usr/src/app
+
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+# --- AQUI ESTÁ A MÁGICA: AS INSTRUÇÕES DE CÓPIA ---
+COPY escuta_som.py ./
+COPY teste_camera.py ./
+COPY receber_audio.py ./
+
+ENV PYTHONUNBUFFERED=1
+
+# Por agora, vamos testar a visão. Depois unimos com a voz!
+# O erro foi corrigido, a câmera já pode ligar sozinha!
+CMD ["python3", "teste_camera.py"]
